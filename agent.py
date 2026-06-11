@@ -623,72 +623,72 @@ class BotGUI:
         
         # Let's try to be less aggressive with reads.
         
-         with sd.InputStream(**stream_args) as stream:
-                print(f"[AUDIO] Listening with rate {stream_args['samplerate']} and block {stream_args['blocksize']}", flush=True)
-                
-                # Pre-allocate buffer for speed
-                # If blocksize is 0, we read what is available.
-                
-                while True:
-                    if self.ptt_event.is_set():
-                        self.ptt_event.clear()
-                        raise StopIteration("PTT")
+        with sd.InputStream(**stream_args) as stream:
+            print(f"[AUDIO] Listening with rate {stream_args['samplerate']} and block {stream_args['blocksize']}", flush=True)
 
-                    rlist, _, _ = select.select([sys.stdin], [], [], 0.001)
-                    if rlist: 
-                        sys.stdin.readline()
-                        raise StopIteration("CLI")
+            # Pre-allocate buffer for speed
+            # If blocksize is 0, we read what is available.
 
-                    # If fallback mode (blocksize 0), read fixed amount
-                    read_size = input_chunk_size
-                    if stream_args.get('blocksize') == 0:
-                        read_size = 1024 # Safe small read
-                    
-                    try:
-                        data, overflow = stream.read(read_size)
-                        if overflow:
-                            print("!", end="", flush=True) 
-                            # If we overflow excessively, raise error to trigger fallback to SAFE MODE (PulseAudio/Software)
-                            # We can use a simple counter attached to the function or object, but here raising immediately 
-                            # after a few in a row is safest.
-                            raise RuntimeError("Audio Buffer Overflow - Triggering Safe Mode")
-                    except Exception as e:
-                        # Convert uncatchable PaErrorCode wrapper to standard Exception if needed
-                        # But honestly, `raise e` should work... unless it's a SystemExit?
-                        # Let's wrap it in a new exception to be sure it bubbles up
-                        raise RuntimeError(f"Audio read failed: {e}")
+            while True:
+                if self.ptt_event.is_set():
+                    self.ptt_event.clear()
+                    raise StopIteration("PTT")
 
-                    audio_data = np.frombuffer(data, dtype=np.int16)
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.001)
+                if rlist: 
+                    sys.stdin.readline()
+                    raise StopIteration("CLI")
 
-                    # Ensure flattening for openwakeword compatibility
-                    if audio_data.ndim > 1:
-                        audio_data = audio_data.flatten()
+                # If fallback mode (blocksize 0), read fixed amount
+                read_size = input_chunk_size
+                if stream_args.get('blocksize') == 0:
+                    read_size = 1024 # Safe small read
 
-                    if use_resampling:
-                        # FAST RESAMPLING: Nearest-neighbor slicing instead of scipy.signal.resample
-                        # This avoids the CPU bottleneck that causes overflow (!!!!!!!) on Raspberry Pi
-                        step = len(audio_data) / target_chunk_size
-                        indices = np.arange(0, len(audio_data), step)[:target_chunk_size].astype(int)
-                        audio_data = audio_data[indices]
-                    
-                    # Convert to float for model prediction without needing heavy resampling logic
-                    # The wake word model needs 16000, which we just faked above.
-                    
-                    # Debug volume occasionally
-                    current_max = np.max(np.abs(audio_data))
-                    
-                    # Only predict if volume is significant to save CPU
-                    if current_max > 200: 
-                        prediction = self.oww_model.predict(audio_data)
-                        for mdl in self.oww_model.prediction_buffer.keys():
-                            score = list(self.oww_model.prediction_buffer[mdl])[-1]
-                            if score > 0.1: # Show potential triggers
-                                print(f"\r[Oww] Score: {score:.3f} | Vol: {current_max}   ", end="", flush=True)
+                try:
+                    data, overflow = stream.read(read_size)
+                    if overflow:
+                        print("!", end="", flush=True) 
+                        # If we overflow excessively, raise error to trigger fallback to SAFE MODE (PulseAudio/Software)
+                        # We can use a simple counter attached to the function or object, but here raising immediately 
+                        # after a few in a row is safest.
+                        raise RuntimeError("Audio Buffer Overflow - Triggering Safe Mode")
+                except Exception as e:
+                    # Convert uncatchable PaErrorCode wrapper to standard Exception if needed
+                    # But honestly, `raise e` should work... unless it's a SystemExit?
+                    # Let's wrap it in a new exception to be sure it bubbles up
+                    raise RuntimeError(f"Audio read failed: {e}")
 
-                            if score > WAKE_WORD_THRESHOLD:
-                                print(f"\n[WAKE] Triggered on '{mdl}' with score: {score:.2f}", flush=True)
-                                self.oww_model.reset() 
-                                return # Success
+                audio_data = np.frombuffer(data, dtype=np.int16)
+
+                # Ensure flattening for openwakeword compatibility
+                if audio_data.ndim > 1:
+                    audio_data = audio_data.flatten()
+
+                if use_resampling:
+                    # FAST RESAMPLING: Nearest-neighbor slicing instead of scipy.signal.resample
+                    # This avoids the CPU bottleneck that causes overflow (!!!!!!!) on Raspberry Pi
+                    step = len(audio_data) / target_chunk_size
+                    indices = np.arange(0, len(audio_data), step)[:target_chunk_size].astype(int)
+                    audio_data = audio_data[indices]
+
+                # Convert to float for model prediction without needing heavy resampling logic
+                # The wake word model needs 16000, which we just faked above.
+
+                # Debug volume occasionally
+                current_max = np.max(np.abs(audio_data))
+
+                # Only predict if volume is significant to save CPU
+                if current_max > 200: 
+                    prediction = self.oww_model.predict(audio_data)
+                    for mdl in self.oww_model.prediction_buffer.keys():
+                        score = list(self.oww_model.prediction_buffer[mdl])[-1]
+                        if score > 0.1: # Show potential triggers
+                            print(f"\r[Oww] Score: {score:.3f} | Vol: {current_max}   ", end="", flush=True)
+
+                        if score > WAKE_WORD_THRESHOLD:
+                            print(f"\n[WAKE] Triggered on '{mdl}' with score: {score:.2f}", flush=True)
+                            self.oww_model.reset() 
+                            return # Success
 
 
     def record_voice_adaptive(self, filename="input.wav"):
