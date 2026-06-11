@@ -65,6 +65,18 @@ pip install --upgrade pip
 pip install --force-reinstall --no-cache-dir sounddevice
 pip install -r requirements.txt
 
+# 5b. Build whisper.cpp (Speech-to-Text)
+echo -e "${YELLOW}Setting up whisper.cpp (STT)...${NC}"
+if [ ! -d "whisper.cpp" ]; then
+    git clone https://github.com/ggml-org/whisper.cpp.git
+    cmake -B whisper.cpp/build -S whisper.cpp
+    cmake --build whisper.cpp/build -j --config Release
+    # Download the base.en model
+    bash whisper.cpp/models/download-ggml-model.sh base.en
+else
+    echo -e "${GREEN}whisper.cpp already present. Skipping build.${NC}"
+fi
+
 # 6. Pull AI Models
 echo -e "${YELLOW}[6/6] Checking AI Models...${NC}"
 if command -v ollama &> /dev/null; then

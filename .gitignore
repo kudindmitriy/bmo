@@ -12,6 +12,9 @@ venv/
 # Ignore the Piper TTS folder (it's huge and OS-specific)
 piper/
 
+# Ignore the whisper.cpp folder (cloned & built by setup.sh)
+whisper.cpp/
+
 # Ignore large model files
 *.onnx
 *.bin
